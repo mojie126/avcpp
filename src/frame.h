@@ -4,8 +4,12 @@
 #include <memory>
 #include <stdexcept>
 
+#include "avcompat.h"
+
+#if AVCPP_CXX_STANDARD >= 20
 #if __has_include(<span>)
 #include <span>
+#endif
 #endif
 
 #include "ffmpeg.h"
@@ -30,7 +34,7 @@ void channel_layout_copy(AVFrame &dst, const AVFrame &src);
 }
 
 static inline int64_t get_best_effort_timestamp(const AVFrame* frame) {
-#if LIBAVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
+#if AVCPP_AVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
     return av_frame_get_best_effort_timestamp(frame);
 #else
     return frame->best_effort_timestamp;
@@ -39,9 +43,9 @@ static inline int64_t get_best_effort_timestamp(const AVFrame* frame) {
 
 // Based on db6efa1815e217ed76f39aee8b15ee5c64698537
 static inline uint64_t get_channel_layout(const AVFrame* frame) {
-#if LIBAVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
+#if AVCPP_AVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
     return static_cast<uint64_t>(av_frame_get_channel_layout(frame));
-#elif API_NEW_CHANNEL_LAYOUT
+#elif AVCPP_API_NEW_CHANNEL_LAYOUT
     return frame->ch_layout.order == AV_CHANNEL_ORDER_NATIVE ? frame->ch_layout.u.mask : 0;
 #else
     return frame->channel_layout;
@@ -49,9 +53,9 @@ static inline uint64_t get_channel_layout(const AVFrame* frame) {
 }
 
 static inline void set_channel_layout(AVFrame* frame, uint64_t layout) {
-#if LIBAVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
+#if AVCPP_AVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
     av_frame_set_channel_layout(frame, static_cast<int64_t>(layout));
-#elif API_NEW_CHANNEL_LAYOUT
+#elif AVCPP_API_NEW_CHANNEL_LAYOUT
     av_channel_layout_uninit(&frame->ch_layout);
     av_channel_layout_from_mask(&frame->ch_layout, layout);
 #else
@@ -61,9 +65,9 @@ static inline void set_channel_layout(AVFrame* frame, uint64_t layout) {
 
 
 static inline int get_channels(const AVFrame* frame) {
-#if LIBAVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
+#if AVCPP_AVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
     return av_frame_get_channels(frame);
-#elif API_NEW_CHANNEL_LAYOUT
+#elif AVCPP_API_NEW_CHANNEL_LAYOUT
     return frame->ch_layout.nb_channels;
 #else
     return frame->channels;
@@ -72,7 +76,7 @@ static inline int get_channels(const AVFrame* frame) {
 
 static inline bool is_valid_channel_layout(const AVFrame *frame)
 {
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     return av_channel_layout_check(&frame->ch_layout);
 #else
     return frame->channel_layout;
@@ -80,7 +84,7 @@ static inline bool is_valid_channel_layout(const AVFrame *frame)
 }
 
 static inline int get_sample_rate(const AVFrame* frame) {
-#if LIBAVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
+#if AVCPP_AVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
     return av_frame_get_sample_rate(frame);
 #else
     return frame->sample_rate;
@@ -88,7 +92,7 @@ static inline int get_sample_rate(const AVFrame* frame) {
 }
 
 static inline void set_sample_rate(AVFrame* frame, int sampleRate) {
-#if LIBAVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
+#if AVCPP_AVUTIL_VERSION_MAJOR < 56 // < FFmpeg 4.0
     av_frame_set_sample_rate(frame, sampleRate);
 #else
     frame->sample_rate = sampleRate;
@@ -341,7 +345,7 @@ public:
             return;
         if (m_raw->buf[0]) {
             for (size_t i = 0; i < AV_NUM_DATA_POINTERS && m_raw->buf[i]; i++) {
-                av_hex_dump(stdout, m_raw->buf[i]->data, m_raw->buf[i]->size);
+                av::hex_dump(stdout, m_raw->buf[i]->data, m_raw->buf[i]->size);
             }
         } else if (m_raw->data[0]) {
             av_hex_dump(stdout, m_raw->data[0], size());

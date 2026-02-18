@@ -11,7 +11,7 @@ extern "C" {
 
 namespace {
 
-#if LIBAVUTIL_VERSION_INT <= AV_VERSION_INT(52,48,101)
+#if AVCPP_AVUTIL_VERSION_INT <= AV_VERSION_INT(52,48,101)
 
 #define CHECK_CHANNELS_CONSISTENCY(frame) \
     av_assert2(!(frame)->channel_layout || \
@@ -79,7 +79,7 @@ int av_frame_copy(AVFrame *dst, const AVFrame *src)
 
 #undef CHECK_CHANNELS_CONSISTENCY
 
-#endif // LIBAVUTIL_VERSION_INT <= 53.5.0 (ffmpeg 2.2)
+#endif // AVCPP_AVUTIL_VERSION_INT <= 53.5.0 (ffmpeg 2.2)
 
 void avcpp_null_deleter(void* /*opaque*/, uint8_t */*data*/)
 {
@@ -152,7 +152,7 @@ int VideoFrame::height() const
 
 bool VideoFrame::isKeyFrame() const
 {
-#if API_FRAME_KEY
+#if AVCPP_API_FRAME_KEY
     return !!(RAW_GET(flags, 0) & AV_FRAME_FLAG_KEY);
 #else
     return RAW_GET(key_frame, false);
@@ -161,7 +161,7 @@ bool VideoFrame::isKeyFrame() const
 
 void VideoFrame::setKeyFrame(bool isKey)
 {
-#if API_FRAME_KEY
+#if AVCPP_API_FRAME_KEY
     if (m_raw) {
         if (isKey) {
             m_raw->flags |= AV_FRAME_FLAG_KEY;
@@ -309,7 +309,7 @@ AudioSamples::AudioSamples(const uint8_t *data, size_t size, SampleFormat sample
     : AudioSamples(sampleFormat, samplesCount, channelLayout, sampleRate, align)
 {
     auto const channels = [](uint64_t mask) -> int {
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
         AVChannelLayout layout{};
         av_channel_layout_from_mask(&layout, mask);
         return layout.nb_channels;
@@ -395,7 +395,7 @@ string AudioSamples::channelsLayoutString() const
     if (!m_raw)
         return "";
     char buf[128] = {0};
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     av_channel_layout_describe(&m_raw->ch_layout, buf, sizeof(buf));
 #else
     av_get_channel_layout_string(buf,
@@ -408,7 +408,7 @@ string AudioSamples::channelsLayoutString() const
 
 void frame::priv::channel_layout_copy(AVFrame &dst, const AVFrame &src)
 {
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     av_channel_layout_copy(&dst.ch_layout, &src.ch_layout);
 #else
     dst.channel_layout = src.channel_layout;

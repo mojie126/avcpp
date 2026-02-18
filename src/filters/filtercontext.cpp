@@ -3,6 +3,8 @@
 
 #include "filtercontext.h"
 
+#if AVCPP_HAS_AVFILTER
+
 namespace av {
 
 using namespace std;
@@ -33,7 +35,7 @@ size_t FilterContext::inputsCount() const
 {
     assert(m_raw);
 
-#if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(3,17,100) // 1.0
+#if AVCPP_AVFILTER_VERSION_INT < AV_VERSION_INT(3,17,100) // 1.0
     auto count = m_raw->input_count;
 #else
     auto count = m_raw->nb_inputs;
@@ -89,7 +91,7 @@ size_t FilterContext::outputsCount() const
 {
     assert(m_raw);
 
-#if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(3,17,100) // 1.0
+#if AVCPP_AVFILTER_VERSION_INT < AV_VERSION_INT(3,17,100) // 1.0
     auto count = m_raw->output_count;
 #else
     auto count = m_raw->nb_outputs;
@@ -99,3 +101,5 @@ size_t FilterContext::outputsCount() const
 }
 
 } // namespace av
+
+#endif // if AVCPP_HAS_AVFILTER

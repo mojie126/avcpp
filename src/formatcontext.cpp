@@ -1,5 +1,9 @@
 #include <iostream>
 
+#include "avcompat.h"
+
+#if AVCPP_HAS_AVFORMAT
+
 #include "avutils.h"
 #include "avtime.h"
 #include "frame.h"
@@ -9,7 +13,7 @@
 #include "codeccontext.h"
 #include "codecparameters.h"
 
-#if !API_AVFORMAT_URL
+#if !AVCPP_API_AVFORMAT_URL
 extern "C"
 {
   #include <libavutil/avstring.h>
@@ -28,7 +32,7 @@ int custom_io_read(void *opaque, uint8_t *buf, int buf_size)
     return io->read(buf, buf_size);
 }
 
-#if (LIBAVFORMAT_VERSION_MAJOR < 61)
+#if (AVCPP_AVFORMAT_VERSION_MAJOR < 61)
 int custom_io_write(void *opaque, uint8_t *buf, int buf_size)
 #else
 int custom_io_write(void *opaque, const uint8_t *buf, int buf_size)
@@ -50,7 +54,7 @@ int64_t custom_io_seek(void *opaque, int64_t offset, int whence)
 
 string_view get_uri(const AVFormatContext *ctx)
 {
-#if API_AVFORMAT_URL
+#if AVCPP_API_AVFORMAT_URL
     if (ctx->url == nullptr)
         return {};
     return ctx->url;
@@ -62,7 +66,7 @@ string_view get_uri(const AVFormatContext *ctx)
 void set_uri(AVFormatContext *ctx, string_view uri)
 {
     if (!uri.empty()) {
-#if API_AVFORMAT_URL
+#if AVCPP_API_AVFORMAT_URL
         if (ctx->url)
             av_free(ctx->url);
         ctx->url = av_strdup(uri.data());
@@ -254,7 +258,7 @@ Stream FormatContext::addStream(const Codec &/*codec*/, OptionalErrorCode ec)
 
     auto stream = Stream(m_monitor, st, Direction::Encoding);
 
-#if !USE_CODECPAR
+#if !AVCPP_USE_CODECPAR
     FF_DISABLE_DEPRECATION_WARNINGS
     if (st->codec) {
         if (outputFormat().isFlags(AVFMT_GLOBALHEADER)) {
@@ -652,7 +656,7 @@ void FormatContext::openOutput(const string &uri, OutputFormat format, AVDiction
     }
 
     // Fix stream flags
-#if !USE_CODECPAR
+#if !AVCPP_USE_CODECPAR
     FF_DISABLE_DEPRECATION_WARNINGS
     for (size_t i = 0; i < streamsCount(); ++i) {
         auto st = stream(i);
@@ -1012,7 +1016,7 @@ void FormatContext::findStreamInfo(AVDictionary **options, size_t optionsCount, 
 void FormatContext::closeCodecContexts()
 {
     // HACK: This is hack to correct cleanup codec contexts in independ way
-#if !USE_CODECPAR
+#if !AVCPP_USE_CODECPAR
     FF_DISABLE_DEPRECATION_WARNINGS
     auto nb = m_raw->nb_streams;
     for (size_t i = 0; i < nb; ++i) {
@@ -1110,3 +1114,5 @@ void FormatContext::openCustomIOOutput(CustomIO *io, size_t internalBufferSize, 
 }
 
 } // namespace av
+
+#endif // if AVCPP_HAS_AVFORMAT

@@ -2,6 +2,8 @@
 
 #include <iostream>
 
+#include "avcompat.h"
+
 extern "C"
 {
 #include <libavutil/avutil.h>
@@ -9,58 +11,11 @@ extern "C"
 #include <libavutil/mathematics.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
-#include <libavdevice/avdevice.h>
+#include <libavutil/bswap.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
-#include <libavformat/version.h>
-#include <libavcodec/version.h>
 }
 
-extern "C" {
-#include <libavfilter/avfilter.h>
-#if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(7,0,0)
-#  include <libavfilter/avfiltergraph.h>
-#endif
-#include <libavfilter/buffersink.h>
-#include <libavfilter/buffersrc.h>
-#if LIBAVFILTER_VERSION_INT <= AV_VERSION_INT(2,77,100) // 0.11.1
-#  include <libavfilter/vsrc_buffer.h>
-#endif
-#if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(6,31,100) // 3.0
-#include <libavfilter/avcodec.h>
-#endif
-}
-
-// Compat level
-
-// avcodec
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(54,59,100) // 1.0
-inline void avcodec_free_frame(AVFrame **frame)
-{
-    av_freep(frame);
-}
-#endif
-
-// avfilter
-#if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(3,17,100) // 1.0
-inline const char *avfilter_pad_get_name(AVFilterPad *pads, int pad_idx)
-{
-    return pads[pad_idx].name;
-}
-
-inline AVMediaType avfilter_pad_get_type(AVFilterPad *pads, int pad_idx)
-{
-    return pads[pad_idx].type;
-}
-#endif
-
-
-// Wrapper around av_free_packet()/av_packet_unref()
-#if LIBAVFORMAT_VERSION_INT < AV_VERSION_INT(6,31,100) // < 3.0
-#define avpacket_unref(p) av_free_packet(p)
-#else
-#define avpacket_unref(p) av_packet_unref(p)
-#endif
 
 template<typename T>
 struct FFWrapperPtr
@@ -177,76 +132,3 @@ struct PixSampleFmtWrapper
 protected:
     T m_fmt = NoneValue;
 };
-
-
-#ifdef __cpp_lib_format
-#    include <format>
-
-namespace av {
-
-template <typename B>
-concept has_name_method_with_ec = requires(const B& type, std::error_code ec) {
-    { type.name(ec) } -> std::convertible_to<std::string_view>;
-};
-
-template <typename B>
-concept has_name_method_without_ec = requires(const B& type) {
-    { type.name() } -> std::convertible_to<std::string_view>;
-};
-
-template <typename B>
-concept has_long_name_method_with_ec = requires(const B& type, std::error_code ec) {
-    { type.longName(ec) } -> std::convertible_to<std::string_view>;
-};
-
-template <typename B>
-concept has_long_name_method_without_ec = requires(const B& type) {
-    { type.longName() } -> std::convertible_to<std::string_view>;
-};
-} // ::av
-
-template <class T, class CharT>
-    requires av::has_name_method_with_ec<T> || av::has_name_method_without_ec<T>
-struct std::formatter<T, CharT>
-{
-    bool longName = false;
-
-    template<typename ParseContext>
-    constexpr ParseContext::iterator parse(ParseContext& ctx)
-    {
-        auto it = ctx.begin();
-        if constexpr (requires { requires av::has_long_name_method_with_ec<T> || av::has_long_name_method_without_ec<T>; }) {
-            if (it == ctx.end())
-                return it;
-            if (*it == 'l') {
-                longName = true;
-                ++it;
-            }
-            if (it != ctx.end() && *it != '}')
-                throw std::format_error("Invalid format args");
-        }
-        return it;
-    }
-
-    template<typename ParseContext>
-    auto format(const T& value, ParseContext& ctx) const
-    {
-        if (longName) {
-            if constexpr (requires { requires av::has_long_name_method_with_ec<T>; }) {
-                std::error_code dummy;
-                return std::format_to(ctx.out(), "{}", value.longName(dummy));
-            } else if constexpr (requires { requires av::has_long_name_method_without_ec<T>; }) {
-                return std::format_to(ctx.out(), "{}", value.longName());
-            }
-        } else {
-            if constexpr (requires { requires av::has_name_method_with_ec<T>; }) {
-                std::error_code dummy;
-                return std::format_to(ctx.out(), "{}", value.name(dummy));
-            } else {
-                return std::format_to(ctx.out(), "{}", value.name());
-            }
-        }
-        return ctx.out();
-    }
-};
-#endif

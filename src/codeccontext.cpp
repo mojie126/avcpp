@@ -1,5 +1,6 @@
 #include <stdexcept>
 
+#include "avcompat.h"
 #include "avlog.h"
 #include "avutils.h"
 #include "averror.h"
@@ -34,10 +35,12 @@ make_error_pair(int status)
 
 }
 
+#if AVCPP_HAS_AVFORMAT
 GenericCodecContext::GenericCodecContext(Stream st)
     : CodecContext2(st, Codec(), st.direction(), st.mediaType())
 {
 }
+#endif // if AVCPP_HAS_AVFORMAT
 
 GenericCodecContext::GenericCodecContext(GenericCodecContext &&other)
     : GenericCodecContext()
@@ -55,7 +58,11 @@ GenericCodecContext &GenericCodecContext::operator=(GenericCodecContext &&rhs)
 
 AVMediaType GenericCodecContext::codecType() const noexcept
 {
+#if AVCPP_HAS_AVFORMAT
     return codecType(stream().mediaType());
+#else
+    return codecType(AVMEDIA_TYPE_UNKNOWN);
+#endif // if AVCPP_HAS_AVFORMAT
 }
 
 // ::anonymous
@@ -63,7 +70,7 @@ AVMediaType GenericCodecContext::codecType() const noexcept
 
 namespace {
 
-#define NEW_CODEC_API (LIBAVCODEC_VERSION_INT >= AV_VERSION_INT(57,37,100))
+#define NEW_CODEC_API (AVCPP_AVCODEC_VERSION_INT >= AV_VERSION_INT(57,37,100))
 
 #if NEW_CODEC_API
 // Use avcodec_send_packet() and avcodec_receive_frame()
@@ -173,7 +180,7 @@ const int *get_supported_samplerates(const struct AVCodec *codec)
 {
     const int *sampleRates = nullptr;
 
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
     avcodec_get_supported_config(nullptr, codec,
                                  AV_CODEC_CONFIG_SAMPLE_RATE, 0,
                                  reinterpret_cast<const void**>(&sampleRates), nullptr);
@@ -274,7 +281,7 @@ Packet VideoEncoderContext::encode(const VideoFrame &inFrame, OptionalErrorCode 
         return packet;
     }
 
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(56, 60, 100)
+#if AVCPP_AVCODEC_VERSION_INT < AV_VERSION_INT(56, 60, 100)
     packet.setKeyPacket(!!m_raw->coded_frame->key_frame);
 #endif
 
@@ -285,7 +292,9 @@ Packet VideoEncoderContext::encode(const VideoFrame &inFrame, OptionalErrorCode 
 void CodecContext2::swap(CodecContext2 &other)
 {
     using std::swap;
+#if AVCPP_HAS_AVFORMAT
     swap(m_stream, other.m_stream);
+#endif // if AVCPP_HAS_AVFORMAT
     swap(m_raw, other.m_raw);
 }
 
@@ -294,6 +303,7 @@ CodecContext2::CodecContext2()
     m_raw = avcodec_alloc_context3(nullptr);
 }
 
+#if AVCPP_HAS_AVFORMAT
 CodecContext2::CodecContext2(const Stream &st, const Codec &codec, Direction direction, AVMediaType type)
     : m_stream(st)
 {
@@ -303,7 +313,7 @@ CodecContext2::CodecContext2(const Stream &st, const Codec &codec, Direction dir
     if (st.mediaType() != type)
         throw av::Exception(make_avcpp_error(Errors::CodecInvalidMediaType));
 
-#if !USE_CODECPAR
+#if !AVCPP_USE_CODECPAR
     FF_DISABLE_DEPRECATION_WARNINGS
     auto const codecId = st.raw()->codec->codec_id;
     FF_ENABLE_DEPRECATION_WARNINGS
@@ -320,7 +330,7 @@ CodecContext2::CodecContext2(const Stream &st, const Codec &codec, Direction dir
             c = findEncodingCodec(codecId);
     }
 
-#if !USE_CODECPAR
+#if !AVCPP_USE_CODECPAR
     FF_DISABLE_DEPRECATION_WARNINGS
     m_raw = st.raw()->codec;
     if (!c.isNull())
@@ -335,6 +345,7 @@ CodecContext2::CodecContext2(const Stream &st, const Codec &codec, Direction dir
 
     setTimeBase(st.timeBase());
 }
+#endif // if AVCPP_HAS_AVFORMAT
 
 CodecContext2::CodecContext2(const Codec &codec, Direction direction, AVMediaType type)
 {
@@ -353,12 +364,12 @@ CodecContext2::~CodecContext2()
     // So only stream-independ CodecContext's must be tracked and closed in ctor.
     // Note: new FFmpeg API declares, that AVStream not owned by codec and deals only with codecpar
     //
-#if !USE_CODECPAR
+#if !AVCPP_USE_CODECPAR
     if (!m_stream.isNull())
         return;
 #endif
 
-#if LIBAVCODEC_VERSION_MAJOR < 58 // FFmpeg 4.0
+#if AVCPP_AVCODEC_VERSION_MAJOR < 58 // FFmpeg 4.0
     std::error_code ec;
     close(ec);
 #endif
@@ -376,12 +387,14 @@ void CodecContext2::setCodec(const Codec &codec, bool resetDefaults, Direction d
         return;
     }
 
+#if AVCPP_HAS_AVFORMAT
     if (!m_raw || (!m_stream.isValid() && !m_stream.isNull()))
     {
         fflog(AV_LOG_WARNING, "Parent stream is not valid. Probably it or FormatContext destroyed\n");
         throws_if(ec, Errors::CodecStreamInvalid);
         return;
     }
+#endif // if AVCPP_HAS_AVFORMAT
 
     if (codec.isNull())
     {
@@ -403,7 +416,7 @@ void CodecContext2::setCodec(const Codec &codec, bool resetDefaults, Direction d
             const enum AVPixelFormat *pixFmts = nullptr;
             const enum AVSampleFormat *sampleFmts = nullptr;
 
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
             avcodec_get_supported_config(nullptr, codec.raw(),
                                          AV_CODEC_CONFIG_PIX_FORMAT, 0,
                                          reinterpret_cast<const void**>(&pixFmts), nullptr);
@@ -421,7 +434,8 @@ void CodecContext2::setCodec(const Codec &codec, bool resetDefaults, Direction d
         }
     }
 
-#if !USE_CODECPAR // AVFORMAT < 57.5.0
+#if AVCPP_HAS_AVFORMAT
+#if !AVCPP_USE_CODECPAR // AVFORMAT < 57.5.0
     FF_DISABLE_DEPRECATION_WARNINGS
     if (m_stream.isValid()) {
         m_stream.raw()->codec = m_raw;
@@ -433,6 +447,7 @@ void CodecContext2::setCodec(const Codec &codec, bool resetDefaults, Direction d
         m_stream.codecParameters().copyFrom(*this);
     }
 #endif
+#endif // if AVCPP_HAS_AVFORMAT
 }
 
 AVMediaType CodecContext2::codecType(AVMediaType contextType) const noexcept
@@ -484,7 +499,7 @@ namespace {
 // Use legacy avcodec_close() for old ffmpeg versions.
 int codec_close(AVCodecContext*& ctx)
 {
-#if API_AVCODEC_CLOSE
+#if AVCPP_API_AVCODEC_CLOSE
     return avcodec_close(ctx);
 #else
     AVCodecContext *ctxNew = nullptr;
@@ -515,7 +530,7 @@ int codec_close(AVCodecContext*& ctx)
     ctxNew->pkt_timebase = ctx->pkt_timebase;
 
 
-#if (LIBAVCODEC_VERSION_MAJOR < 61) || (defined(FF_API_TICKS_PER_FRAME) && FF_API_TICKS_PER_FRAME)
+#if (AVCPP_AVCODEC_VERSION_MAJOR < 61) || (defined(FF_API_TICKS_PER_FRAME) && FF_API_TICKS_PER_FRAME)
 FF_DISABLE_DEPRECATION_WARNINGS
     ctxNew->ticks_per_frame = ctx->ticks_per_frame;
 FF_ENABLE_DEPRECATION_WARNINGS
@@ -557,7 +572,11 @@ bool CodecContext2::isOpened() const noexcept
 bool CodecContext2::isValid() const noexcept
 {
     // Check parent stream first
+#if AVCPP_HAS_AVFORMAT
     return ((m_stream.isValid() || m_stream.isNull()) && m_raw && m_raw->codec);
+#else
+    return (m_raw && m_raw->codec);
+#endif // if AVCPP_HAS_AVFORMAT
 }
 
 void CodecContext2::copyContextFrom(const CodecContext2 &other, OptionalErrorCode ec)
@@ -592,7 +611,7 @@ void CodecContext2::copyContextFrom(const CodecContext2 &other, OptionalErrorCod
         return;
     }
 
-#if !USE_CODECPAR
+#if !AVCPP_USE_CODECPAR
     FF_DISABLE_DEPRECATION_WARNINGS
     int stat = avcodec_copy_context(m_raw, other.m_raw);
     if (stat < 0)
@@ -616,10 +635,12 @@ void CodecContext2::setTimeBase(const Rational &value) noexcept
     RAW_SET2(isValid() && !isOpened(), time_base, value.getValue());
 }
 
+#if AVCPP_HAS_AVFORMAT
 const Stream &CodecContext2::stream() const noexcept
 {
     return m_stream;
 }
+#endif // if AVCPP_HAS_AVFORMAT
 
 Codec CodecContext2::codec() const noexcept
 {
@@ -657,7 +678,7 @@ int CodecContext2::frameSize() const noexcept
 
 int64_t CodecContext2::frameNumber() const noexcept
 {
-#if API_FRAME_NUM
+#if AVCPP_API_FRAME_NUM
     return RAW_GET2(isValid(), frame_num, 0);
 #else
     return RAW_GET2(isValid(), frame_number, 0);
@@ -784,12 +805,19 @@ bool CodecContext2::isValidForEncode(Direction direction, AVMediaType /*type*/) 
 {
     if (!isValid())
     {
+#if AVCPP_HAS_AVFORMAT
         fflog(AV_LOG_WARNING,
               "Not valid context: codec_context=%p, stream_valid=%d, stream_isnull=%d, codec=%p\n",
               m_raw,
               m_stream.isValid(),
               m_stream.isNull(),
               codec().raw());
+#else
+        fflog(AV_LOG_WARNING,
+              "Not valid context: codec_context=%p, codec=%p\n",
+              m_raw,
+              codec().raw());
+#endif // if AVCPP_HAS_AVFORMAT
         return false;
     }
 
@@ -937,7 +965,7 @@ AudioSamples AudioDecoderContext::decode(const Packet &inPacket, size_t offset, 
     }
 
     // Fix channels layout, only for legacy Channel Layout, new API assumes both parameters more sync
-#if !API_NEW_CHANNEL_LAYOUT
+#if !AVCPP_API_NEW_CHANNEL_LAYOUT
     if (outSamples.channelsCount() && !outSamples.channelsLayout())
         av::frame::set_channel_layout(outSamples.raw(), av_get_default_channel_layout(outSamples.channelsCount()));
 #endif
@@ -1002,15 +1030,17 @@ CodecContext2::decodeCommon(T &outFrame,
 
     if (inPacket.timeBase() != Rational())
         outFrame.setTimeBase(inPacket.timeBase());
+#if AVCPP_HAS_AVFORMAT
     else
         outFrame.setTimeBase(m_stream.timeBase());
+#endif // if AVCPP_HAS_AVFORMAT
 
     AVFrame *frame = outFrame.raw();
 
     if (frame->pts == av::NoPts)
         frame->pts = av::frame::get_best_effort_timestamp(frame);
 
-#if LIBAVCODEC_VERSION_MAJOR < 57
+#if AVCPP_AVCODEC_VERSION_MAJOR < 57
     if (frame->pts == av::NoPts)
         frame->pts = frame->pkt_pts;
 #endif
@@ -1023,8 +1053,10 @@ CodecContext2::decodeCommon(T &outFrame,
 
     if (inPacket)
         outFrame.setStreamIndex(inPacket.streamIndex());
+#if AVCPP_HAS_AVFORMAT
     else
         outFrame.setStreamIndex(m_stream.index());
+#endif // if AVCPP_HAS_AVFORMAT
 
     outFrame.setComplete(true);
 
@@ -1047,9 +1079,11 @@ CodecContext2::encodeCommon(Packet &outPacket,
     if (inFrame && inFrame.timeBase() != Rational()) {
         outPacket.setTimeBase(inFrame.timeBase());
         outPacket.setStreamIndex(inFrame.streamIndex());
-    } else if (m_stream.isValid()) {
-#if USE_CODECPAR
-#if API_AVFORMAT_AV_STREAM_GET_CODEC_TIMEBASE
+    }
+#if AVCPP_HAS_AVFORMAT
+    else if (m_stream.isValid()) {
+#if AVCPP_USE_CODECPAR
+#if defined(AVCPP_API_AVFORMAT_AV_STREAM_GET_CODEC_TIMEBASE) && (AVCPP_API_AVFORMAT_AV_STREAM_GET_CODEC_TIMEBASE)
         outPacket.setTimeBase(av_stream_get_codec_timebase(m_stream.raw()));
 #else
         // TBD: additional checking are needed
@@ -1065,7 +1099,9 @@ CodecContext2::encodeCommon(Packet &outPacket,
         FF_ENABLE_DEPRECATION_WARNINGS
 #endif
         outPacket.setStreamIndex(m_stream.index());
-    } else if (timeBase() != Rational()) {
+    }
+#endif // if AVCPP_HAS_AVFORMAT
+    else if (timeBase() != Rational()) {
         outPacket.setTimeBase(timeBase());
     }
 
@@ -1085,7 +1121,7 @@ namespace codec_context::audio {
 //
 void set_channels(AVCodecContext *obj, int channels)
 {
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     if (!av_channel_layout_check(&obj->ch_layout) || (obj->ch_layout.nb_channels != channels)) {
         av_channel_layout_uninit(&obj->ch_layout);
         av_channel_layout_default(&obj->ch_layout, channels);
@@ -1100,7 +1136,7 @@ void set_channels(AVCodecContext *obj, int channels)
 
 void set_channel_layout_mask(AVCodecContext *obj, uint64_t mask)
 {
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     if (!av_channel_layout_check(&obj->ch_layout) ||
         (obj->ch_layout.order != AV_CHANNEL_ORDER_NATIVE) ||
         ((obj->ch_layout.order == AV_CHANNEL_ORDER_NATIVE) && (obj->ch_layout.u.mask != mask))) {
@@ -1121,7 +1157,7 @@ void set_channel_layout_mask(AVCodecContext *obj, uint64_t mask)
 
 int get_channels(const AVCodecContext *obj)
 {
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     return obj->ch_layout.nb_channels;
 #else
     if (obj->channels)
@@ -1137,7 +1173,7 @@ int get_channels(const AVCodecContext *obj)
 
 uint64_t get_channel_layout_mask(const AVCodecContext *obj)
 {
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     return obj->ch_layout.order == AV_CHANNEL_ORDER_NATIVE ? obj->ch_layout.u.mask : 0;
 #else
     if (obj->channel_layout)

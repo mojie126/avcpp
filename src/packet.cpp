@@ -6,7 +6,7 @@ namespace av {
 
 Packet::Packet()
 {
-#if API_AVCODEC_NEW_INIT_PACKET
+#if AVCPP_API_AVCODEC_NEW_INIT_PACKET
     m_raw = av_packet_alloc();
 #else
     av_init_packet(raw());
@@ -97,9 +97,23 @@ Packet::Packet(uint8_t *data, size_t size, Packet::wrap_data_static, OptionalErr
     m_completeFlag = true;
 }
 
+#if AVCPP_CXX_STANDARD >= 20
+Packet::Packet(std::span<const uint8_t> data, bool doAllign)
+    : Packet(data.data(), data.size(), doAllign)
+{}
+
+Packet::Packet(std::span<uint8_t> data, wrap_data, OptionalErrorCode ec)
+    : Packet(data.data(), data.size(), wrap_data{}, ec)
+{}
+
+Packet::Packet(std::span<uint8_t> data, wrap_data_static, OptionalErrorCode ec)
+    : Packet(data.data(), data.size(), wrap_data_static{}, ec)
+{}
+#endif
+
 Packet::~Packet()
 {
-#if API_AVCODEC_NEW_INIT_PACKET
+#if AVCPP_API_AVCODEC_NEW_INIT_PACKET
     av_packet_free(&m_raw);
 #else
     avpacket_unref(&m_raw);
@@ -120,7 +134,7 @@ void Packet::initFromAVPacket(const AVPacket *src, bool deepCopy, OptionalErrorC
         avpacket_unref(raw());
 
     if (deepCopy) {
-#if API_AVCODEC_NEW_INIT_PACKET
+#if AVCPP_API_AVCODEC_NEW_INIT_PACKET
         if (!m_raw)
             m_raw = av_packet_alloc();
 
@@ -204,6 +218,23 @@ uint8_t *Packet::data()
 {
     return raw()->data;
 }
+
+#if AVCPP_CXX_STANDARD >= 20
+bool Packet::setData(std::span<const uint8_t> newData, OptionalErrorCode ec)
+{
+    return setData(newData.data(), newData.size(), ec);
+}
+
+std::span<uint8_t> Packet::span()
+{
+    return {raw()->data, size_t(raw()->size)};
+}
+
+std::span<const uint8_t> Packet::span() const
+{
+    return {raw()->data, size_t(raw()->size)};
+}
+#endif
 
 Timestamp Packet::pts() const
 {
@@ -313,6 +344,7 @@ void Packet::clearFlags(int flags)
     raw()->flags &= ~flags;
 }
 
+#if AVCPP_HAS_AVFORMAT
 void Packet::dump(const Stream &st, bool dumpPayload) const
 {
     if (!st.isNull())
@@ -321,6 +353,7 @@ void Packet::dump(const Stream &st, bool dumpPayload) const
         av_pkt_dump2(stdout, raw(), dumpPayload ? 1 : 0, stream);
     }
 }
+#endif // if AVCPP_HAS_AVFORMAT
 
 void Packet::setTimeBase(const Rational &tb)
 {
@@ -335,6 +368,82 @@ void Packet::setTimeBase(const Rational &tb)
     m_timeBase = tb;
 }
 
+#if AVCPP_HAS_PKT_SIDE_DATA
+using SideDataSize_t = std::conditional_t<AVCPP_API_AVBUFFER_SIZE_T, std::size_t, int>;
+
+std::span<const uint8_t> Packet::sideData(AVPacketSideDataType type) const
+{
+    SideDataSize_t size;
+    auto const data = av_packet_get_side_data(raw(), type, &size);
+    return data ? std::span<const uint8_t>{} : std::span<const uint8_t>{data, std::size_t(size)};
+}
+
+std::span<uint8_t> Packet::sideData(AVPacketSideDataType type)
+{
+    SideDataSize_t size;
+    auto const data = av_packet_get_side_data(raw(), type, &size);
+    return data ? std::span<uint8_t>{} : std::span<uint8_t>{data, std::size_t(size)};
+}
+
+PacketSideData Packet::sideData(std::size_t index) noexcept
+{
+    if (!m_raw)
+        return {};
+    if (index >= sideDataElements())
+        return {};
+    return PacketSideData{m_raw->side_data[index]};
+}
+
+ArrayView<AVPacketSideData, PacketSideData, std::size_t> Packet::sideData() noexcept
+{
+    return make_array_view_size<PacketSideData>(m_raw->side_data, m_raw->side_data_elems);
+}
+
+ArrayView<const AVPacketSideData, PacketSideData, std::size_t> Packet::sideData() const noexcept
+{
+    return make_array_view_size<PacketSideData>((const AVPacketSideData*)m_raw->side_data, m_raw->side_data_elems);
+}
+
+size_t Packet::sideDataElements() const noexcept
+{
+    return m_raw ? m_raw->side_data_elems : 0;
+}
+
+void Packet::addSideData(AVPacketSideDataType type, std::span<const uint8_t> data, OptionalErrorCode ec)
+{
+    clear_if(ec);
+    auto newdata = av::memdup<uint8_t>(data.data(), data.size());
+    if (!newdata) {
+        throws_if(ec, AVERROR(ENOMEM), ffmpeg_category());
+        return;
+    }
+    if (auto ret = av_packet_add_side_data(raw(), type, newdata.get(), data.size()); ret < 0) {
+        throws_if(ec, ret, ffmpeg_category());
+    }
+    newdata.release();
+}
+
+void Packet::addSideData(AVPacketSideDataType type, std::span<uint8_t> data, wrap_data, OptionalErrorCode ec)
+{
+    clear_if(ec);
+    if (auto ret = av_packet_add_side_data(raw(), type, data.data(), data.size()); ret < 0) {
+        throws_if(ec, ret, ffmpeg_category());
+    }
+}
+
+std::span<uint8_t> Packet::allocateSideData(AVPacketSideDataType type, std::size_t size, OptionalErrorCode ec)
+{
+    clear_if(ec);
+    auto data = av_packet_new_side_data(raw(), type, size);
+    if (!data) {
+        throws_if(ec, AVERROR(ENOMEM), ffmpeg_category());
+        return {};
+    }
+    // data owned by the packet itself
+    return {data, size};
+}
+#endif
+
 bool Packet::isReferenced() const
 {
     return raw()->buf;
@@ -348,7 +457,7 @@ int Packet::refCount() const
         return 0;
 }
 
-#if API_AVCODEC_NEW_INIT_PACKET
+#if AVCPP_API_AVCODEC_NEW_INIT_PACKET
 AVPacket *Packet::makeRef(OptionalErrorCode ec) const
 {
     clear_if(ec);
@@ -415,7 +524,7 @@ Packet &Packet::operator=(Packet &&rhs)
     return *this;
 }
 
-#if API_AVCODEC_NEW_INIT_PACKET
+#if AVCPP_API_AVCODEC_NEW_INIT_PACKET
 Packet &Packet::operator=(const AVPacket *rhs)
 {
     if (rhs == raw())
@@ -452,5 +561,43 @@ void Packet::setDuration(int duration, const Rational &durationTimeBase)
     else
         raw()->duration = durationTimeBase.rescale(duration, m_timeBase);
 }
+
+#if AVCPP_HAS_PKT_SIDE_DATA
+string_view PacketSideData::name() const noexcept
+{
+    return name(m_raw.type);
+}
+
+AVPacketSideDataType PacketSideData::type() const noexcept
+{
+    return m_raw.type;
+}
+
+std::span<const uint8_t> PacketSideData::data() const noexcept
+{
+    return {m_raw.data, std::size_t(m_raw.size)};
+}
+
+std::span<uint8_t> PacketSideData::data() noexcept
+{
+    return {m_raw.data, std::size_t(m_raw.size)};
+}
+
+bool PacketSideData::empty() const noexcept
+{
+    return !m_raw.data || !m_raw.size;
+}
+
+PacketSideData::operator bool() const noexcept
+{
+    return !empty();
+}
+
+string_view PacketSideData::name(AVPacketSideDataType type)
+{
+    auto nm = av_packet_side_data_name(type);
+    return nm ? std::string_view{nm} : std::string_view{};
+}
+#endif
 
 } // ::av

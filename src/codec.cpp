@@ -1,3 +1,5 @@
+#include "avcompat.h"
+
 #include "codec.h"
 #include "avutils.h"
 
@@ -18,13 +20,13 @@ const char *Codec::longName() const
 
 bool Codec::canEncode() const
 {
-#if LIBAVCODEC_VERSION_INT <= AV_VERSION_INT(54,23,100) // 0.11.1
+#if AVCPP_AVCODEC_VERSION_INT <= AV_VERSION_INT(54,23,100) // 0.11.1
     if (m_raw)
         return (m_raw->encode || m_raw->encode2);
-#elif LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,37,100) // 7fc329e
+#elif AVCPP_AVCODEC_VERSION_INT < AV_VERSION_INT(57,37,100) // 7fc329e
     if (m_raw)
         return m_raw->encode2;
-#elif LIBAVCODEC_VERSION_INT < AV_VERSION_INT(59,37,100) // <5.1
+#elif AVCPP_AVCODEC_VERSION_INT < AV_VERSION_INT(59,37,100) // <5.1
     if (m_raw)
         return (m_raw->receive_packet || m_raw->encode2);
 #else
@@ -35,10 +37,10 @@ bool Codec::canEncode() const
 
 bool Codec::canDecode() const
 {
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(57,37,100) // 7fc329e
+#if AVCPP_AVCODEC_VERSION_INT < AV_VERSION_INT(57,37,100) // 7fc329e
     if (m_raw)
         return m_raw->decode;
-#elif LIBAVCODEC_VERSION_INT < AV_VERSION_INT(59,37,100) // <5.1
+#elif AVCPP_AVCODEC_VERSION_INT < AV_VERSION_INT(59,37,100) // <5.1
     if (m_raw)
         return (m_raw->receive_frame || m_raw->decode);
 #else
@@ -68,7 +70,7 @@ std::deque<Rational> Codec::supportedFramerates() const
         return {};
     deque<Rational> frameRates;
     const AVRational *frameRatesRaw = nullptr;
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
     avcodec_get_supported_config(nullptr, m_raw, AV_CODEC_CONFIG_FRAME_RATE, 0, reinterpret_cast<const void**>(&frameRatesRaw), nullptr);
 #else
     frameRatesRaw = m_raw->supported_framerates;
@@ -91,7 +93,7 @@ std::deque<PixelFormat> Codec::supportedPixelFormats() const
     deque<PixelFormat> pixFmts;
     const enum AVPixelFormat *pixFmtsRaw = nullptr;
 
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
     avcodec_get_supported_config(nullptr, m_raw, AV_CODEC_CONFIG_PIX_FORMAT, 0, reinterpret_cast<const void**>(&pixFmtsRaw), nullptr);
 #else
     pixFmtsRaw = m_raw->pix_fmts;
@@ -115,7 +117,7 @@ std::deque<int> Codec::supportedSamplerates() const
     deque<int> sampleRates;
     const int *sampleRatesRaw = nullptr;
 
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
     avcodec_get_supported_config(nullptr, m_raw, AV_CODEC_CONFIG_SAMPLE_RATE, 0, reinterpret_cast<const void**>(&sampleRatesRaw), nullptr);
 #else
     sampleRatesRaw = m_raw->supported_samplerates;
@@ -139,7 +141,7 @@ std::deque<SampleFormat> Codec::supportedSampleFormats() const
     deque<SampleFormat> sampleFmts;
     const enum AVSampleFormat *sampleFmtsRaw = nullptr;
 
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
     avcodec_get_supported_config(nullptr, m_raw, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, reinterpret_cast<const void**>(&sampleFmtsRaw), nullptr);
 #else
     sampleFmtsRaw = m_raw->sample_fmts;
@@ -162,10 +164,10 @@ std::deque<uint64_t> Codec::supportedChannelLayouts() const
 
     deque<uint64_t> channelLayouts;
 
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
     const AVChannelLayout *channelLayoutsRaw = nullptr;
 
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
     avcodec_get_supported_config(nullptr, m_raw, AV_CODEC_CONFIG_CHANNEL_LAYOUT, 0, reinterpret_cast<const void**>(&channelLayoutsRaw), nullptr);
 #else
     channelLayoutsRaw = m_raw->ch_layouts;
@@ -189,7 +191,7 @@ std::deque<uint64_t> Codec::supportedChannelLayouts() const
     return channelLayouts;
 }
 
-#if API_NEW_CHANNEL_LAYOUT
+#if AVCPP_API_NEW_CHANNEL_LAYOUT
 std::deque<ChannelLayoutView> Codec::supportedChannelLayouts2() const
 {
     if (!m_raw)
@@ -198,7 +200,7 @@ std::deque<ChannelLayoutView> Codec::supportedChannelLayouts2() const
     deque<ChannelLayoutView> channelLayouts;
     const AVChannelLayout *channelLayoutsRaw = nullptr;
 
-#if API_AVCODEC_GET_SUPPORTED_CONFIG
+#if AVCPP_API_AVCODEC_GET_SUPPORTED_CONFIG
     avcodec_get_supported_config(nullptr, m_raw, AV_CODEC_CONFIG_CHANNEL_LAYOUT, 0, reinterpret_cast<const void**>(&channelLayoutsRaw), nullptr);
 #else
     channelLayoutsRaw = m_raw->ch_layouts;
@@ -237,6 +239,7 @@ Codec findDecodingCodec(const string &name)
     return Codec { avcodec_find_decoder_by_name(name.c_str()) };
 }
 
+#if AVCPP_HAS_AVFORMAT
 Codec guessEncodingCodec(OutputFormat format, const char *name, const char *url, const char *mime, AVMediaType mediaType)
 {
     auto id = av_guess_codec(format.raw(), name, url, mime, mediaType);
@@ -250,5 +253,6 @@ Codec findEncodingCodec(const OutputFormat &format, bool isVideo)
     else
         return Codec { avcodec_find_encoder(format.defaultAudioCodecId()) };
 }
+#endif // if AVCPP_HAS_AVFORMAT
 
 } // ::av
