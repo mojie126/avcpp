@@ -13,7 +13,9 @@ add_executable(test_executor
     Timestamp.cpp
     Codec.cpp
     PixelSampleFormat.cpp
-    Common.cpp)
+    Common.cpp
+    Buffer.cpp
+    FormatCustomIO_test.cpp)
 target_link_libraries(test_executor PUBLIC Catch2::Catch2WithMain avcpp::avcpp)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../catch2/contrib")

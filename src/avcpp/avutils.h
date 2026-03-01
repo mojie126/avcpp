@@ -1,6 +1,6 @@
 #pragma once
 
-#include "avconfig.h"
+#include "avcpp/avconfig.h"
 
 #include <ranges>
 #include <string>
@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <functional>
 #include <type_traits>
+#include <limits>
 
 #if AVCPP_CXX_STANDARD >= 20
 #  include <span>
@@ -132,6 +133,7 @@ struct AvDeleter
 #if AVCPP_HAS_AVFILTER
     bool operator ()(struct AVFilterInOut* &filterInOut);
 #endif // if AVCPP_HAS_AVFILTER
+    bool operator() (struct AVBufferRef* &bufferRef);
 };
 } // ::v1
 
@@ -437,6 +439,7 @@ template<typename T, typename U, class Policy>
 class ArrayView : public std::ranges::view_interface<ArrayView<T, U, Policy>>
 {
 public:
+    constexpr ArrayView() = default;
     constexpr ArrayView(T *ptr, Policy policy)
         : m_ptr(ptr), m_policy(std::move(policy))
     {}
@@ -510,10 +513,10 @@ T guessValue(const T& value, L list)
         return value;
 
     T best = value;
-    T bestDistance = std::numeric_limits<T>::max();
+    T bestDistance = (std::numeric_limits<T>::max)();
 
     for (auto&& cur : list) {
-        auto const distance = std::max(cur, value) - std::min(cur, value);
+        auto const distance = (std::max)(cur, value) - (std::min)(cur, value);
         if (distance < bestDistance) {
             bestDistance = distance;
             best = cur;
@@ -565,11 +568,11 @@ T guessValue(const T& value, const L * list, C endListComparator)
         return value;
 
     T best = value;
-    T bestDistance = std::numeric_limits<T>::max();
+    T bestDistance = (std::numeric_limits<T>::max)();
 
     for (const L * ptr = list; !endListComparator(*ptr); ++ptr) {
         auto const cur = *ptr;
-        auto const distance = std::max(cur, value) - std::min(cur, value);
+        auto const distance = (std::max)(cur, value) - (std::min)(cur, value);
         if (distance < bestDistance) {
             bestDistance = distance;
             best = cur;
